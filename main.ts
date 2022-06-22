@@ -158,10 +158,12 @@ input.onButtonPressed(Button.A, function () {
 })
 // A calibração parece não estar a resultar. Medi e afinei com valores fixos. O bloco ao lado é o código original (deixo para referência).
 function transmitBitStartStop () {
-    pins.analogWritePin(AnalogPin.P0, 511)
-    control.waitMicros(IR_MARK)
-    pins.analogWritePin(AnalogPin.P0, 0)
-    control.waitMicros(START_STOP_PAUSE)
+    for (let index = 0; index < 2; index++) {
+        pins.analogWritePin(AnalogPin.P0, 511)
+        control.waitMicros(IR_MARK)
+        pins.analogWritePin(AnalogPin.P0, 0)
+        control.waitMicros(START_STOP_PAUSE)
+    }
 }
 // Fonte de inspiração:
 // 
@@ -262,9 +264,7 @@ function IRShot () {
     // Em binário: 0100 0000 0000 0000
     // A máscara será usada para transmitir bit a bit
     mask = 2 ** (SHOT_MESSAGE_BIT_SIZE - 1)
-    for (let index = 0; index < 4; index++) {
-        transmitBitStartStop()
-    }
+    transmitBitStartStop()
     while (mask >= 1) {
         temp1 = Math.idiv(messageBeingSent, mask)
         if (temp1 == 1) {
@@ -275,9 +275,7 @@ function IRShot () {
         messageBeingSent = messageBeingSent - temp1 * mask
         mask = mask / 2
     }
-    for (let index = 0; index < 4; index++) {
-        transmitBitStartStop()
-    }
+    transmitBitStartStop()
 }
 let temp1 = 0
 let mask = 0
