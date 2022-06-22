@@ -97,15 +97,6 @@ function transmitBitHigh () {
     pins.analogWritePin(AnalogPin.P0, 0)
     control.waitMicros(HIGH_PAUSE)
 }
-function detectBit () {
-    if (pulseToPulse > START_STOP_PAUSE) {
-        IRReceiveState = IRRCV_DETECT_BIT
-    } else if (pulseToPulse > HIGH_PAUSE) {
-        pushBitOne()
-    } else if (pulseToPulse > LOW_PAUSE) {
-        pushBitZero()
-    }
-}
 control.onEvent(EventBusSource.MICROBIT_ID_IO_P19, EventBusValue.MICROBIT_EVT_ANY, function () {
     pulseToPulse = control.eventValue() - IR_MARK
     // Estamos a fornecer uma margem de erro para baixo e infinito para cima de 1500 que é o tempo de Low do pino 1.
@@ -126,7 +117,6 @@ control.onEvent(EventBusSource.MICROBIT_ID_IO_P19, EventBusValue.MICROBIT_EVT_AN
         } else if (pulseToPulse > 50 && pulseToPulse < 400) {
             pushBitZero()
         } else {
-            basic.showNumber(pulseToPulse)
             Reset()
         }
     }
