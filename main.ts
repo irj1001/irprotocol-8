@@ -1,189 +1,5 @@
 /**
- * Fonte de inspiração:
- * 
- * Recetor IR =============================================================
- * 
- * Extensão: https://github.com/1010Technologies/pxt-makerbit-ir-receiver/blob/master/infrared.ts
- * 
- * Na pasta Projet é o zip pxt-makerbit-ir-receiver-master.zip e o ficheiro infrared.ts
- * 
- * Usei como inspiração para desenhar o meu recetor que case com o de cima.
- * 
- * Como este terá uma thread em background será bom no final eu ter um projeto para o emissor e outro para o recetor.
- * 
- * Pelas minhas contas e assumindo que o pulseToPulse=tempo de mark + tempo de space
- * 
- * Sequência START_STOP demorará 45 períodos de 26 microsegundos ou seja pulseToPulse = 1014 microsegundos (IRMARK + START_STOP_PAUSE)
- * 
- * Sequência LOW demorará 16 períodos de 26 microsegundos ou seja pulseToPulse = 416 microsegundos (IRMARK + LOW_PAUSE)
- * 
- * Sequência HIGH demorará 27 períodso de 26 microsegundos ou seja pulseToPulse = 702 microsegundos  (IRMARK + HIGH_PAUSE)
- * 
- *   
- * 
- *   
- * 
- * Todos os valores foram afinados por mim de forma manual.
- */
-function detectStartStop() {
-    // Estamos a fornecer uma margem de erro de 10% para baixo e infinito para cima
-    if (pulseToPulse > 900) {
-        IRReceiveState = IRRCV_DETECT_BIT
-    }
-}
-// A calibração parece não estar a resultar. Medi e afinei com valores fixos. O bloco ao lado é o código original (deixo para referência).
-function transmitBitStartStop() {
-    pins.analogWritePin(AnalogPin.P0, 511)
-    control.waitMicros(IR_MARK)
-    pins.analogWritePin(AnalogPin.P0, 0)
-    control.waitMicros(START_STOP_PAUSE)
-}
-// // LOW
-pins.onPulsed(DigitalPin.P2, PulseValue.High, function () {
-    space = pins.pulseDuration()
-    control.raiseEvent(
-    EventBusSource.MICROBIT_ID_IO_P19,
-    mark + space
-    )
-})
-// Fazia o trabalho do construtor de class InfraredDevice. Adaptei apenas para inicializar a porta analógica PWM.
-function enableIRTransmission() {
-    // We will use PWM, with a frequency of 38 KHz
-    pins.analogWritePin(AnalogPin.P0, 0)
-    pins.analogSetPeriod(AnalogPin.P0, 26)
-    for (let index = 0; index <= 7; index++) {
-        pins.analogWritePin(AnalogPin.P0, 511)
-        control.waitMicros(1)
-    }
-    // We will use PWM, with a frequency of 38 KHz
-    pins.analogWritePin(AnalogPin.P0, 0)
-}
-control.onEvent(EventBusSource.MICROBIT_ID_IO_P19, EventBusValue.MICROBIT_EVT_ANY, function () {
-    pulseToPulse = control.eventValue() - IR_MARK
-    if (IRReceiveState == IRRCV_DETECT_START_STOP) {
-        detectStartStop()
-    } else {
-        detectBit()
-    }
-})
-function pushBitZero() {
-    // Shift left de 1 bit
-    messageBeingReceived = messageBeingReceived * 2
-    receivedBits += 1
-    if (receivedBits == SHOT_MESSAGE_BIT_SIZE) {
-        lasIRShotReceived = messageBeingReceived
-        control.raiseEvent(
-        EventBusSource.MICROBIT_ID_IO_P20,
-        0
-        )
-        Reset()
-    }
-}
-function transmitBitLow() {
-    pins.analogWritePin(AnalogPin.P0, 511)
-    control.waitMicros(IR_MARK)
-    pins.analogWritePin(AnalogPin.P0, 0)
-    control.waitMicros(LOW_PAUSE)
-}
-function Reset() {
-    IRRCV_DETECT_START_STOP = 0
-    IRRCV_DETECT_BIT = 1
-    IRReceiveState = IRRCV_DETECT_START_STOP
-    receivedBits = 0
-    messageBeingReceived = 0
-}
-function pushBitOne() {
-    // Shift left de 1 bit
-    messageBeingReceived = messageBeingReceived * 2
-    messageBeingReceived += 1
-    receivedBits += 1
-    if (receivedBits == SHOT_MESSAGE_BIT_SIZE) {
-        lasIRShotReceived = messageBeingReceived
-        control.raiseEvent(
-        EventBusSource.MICROBIT_ID_IO_P20,
-        1
-        )
-        Reset()
-    }
-}
-/**
- * USER INTERFACE:
- * 
- * A+B four consecutive times (with 1 second) => Enter into configuration mode
- * 
- *  
- * 
- *  Then the display will explain the configuration:
- * 
- * A: Swap between single shot and burst shot
- * 
- * B: Me-> :How many players I shot / ME<- :How many times I was shot / Best Team
- * 
- * A+B: How many shots I already use
- */
-input.onButtonPressed(Button.A, function () {
-    PLAYER_ID += 1
-    // Three consecutive replicas of PLAYER_ID for redundancy.
-    SHOT_MESSAGE = (PLAYER_ID * 2 ** PLAYER_ID_BIT_SIZE + PLAYER_ID) * 2 ** PLAYER_ID_BIT_SIZE + PLAYER_ID
-    basic.showNumber(SHOT_MESSAGE)
-    IRShot()
-    basic.clearScreen()
-})
-function transmitBitHigh() {
-    pins.analogWritePin(AnalogPin.P0, 511)
-    control.waitMicros(IR_MARK)
-    pins.analogWritePin(AnalogPin.P0, 0)
-    control.waitMicros(HIGH_PAUSE)
-}
-// Bits are sent starting on msb to lsb
-function IRShot() {
-    messageBeingSent = SHOT_MESSAGE
-    // Em binário: 0100 0000 0000 0000
-    // A máscara será usada para transmitir bit a bit
-    //             
-    mask = 2 ** (SHOT_MESSAGE_BIT_SIZE - 1)
-    for (let index = 0; index < 4; index++) {
-        transmitBitStartStop()
-    }
-    while (mask >= 1) {
-        temp1 = Math.idiv(messageBeingSent, mask)
-        if (temp1 == 1) {
-            transmitBitHigh()
-        } else {
-            transmitBitLow()
-        }
-        messageBeingSent = messageBeingSent - temp1 * mask
-        mask = mask / 2
-    }
-    for (let index = 0; index < 4; index++) {
-        transmitBitStartStop()
-    }
-}
-// // HIGH
-pins.onPulsed(DigitalPin.P2, PulseValue.Low, function () {
-    mark = pins.pulseDuration()
-})
-function detectBit() {
-    if (pulseToPulse > START_STOP_PAUSE) {
-        IRReceiveState = IRRCV_DETECT_BIT
-    } else if (pulseToPulse > HIGH_PAUSE) {
-        pushBitOne()
-    } else if (pulseToPulse > LOW_PAUSE) {
-        pushBitZero()
-    }
-}
-control.onEvent(EventBusSource.MICROBIT_ID_IO_P20, EventBusValue.MICROBIT_EVT_ANY, function () {
-    basic.showString("R=")
-    basic.showNumber(lasIRShotReceived)
-    basic.pause(1000)
-    basic.clearScreen()
-})
-function enableIRDetection() {
-    lasIRShotReceived = 0
-    Reset()
-}
-/**
- * Explicação do código 
+ * Explicação do código
  * 
  * Tanta modelação para aqui e para acolá para dizer que o que conta é o tempo que dura cada símbolo no meio. Por símbolo entende-se um pedaço de 6 períodos a 1 e uma tamanho variável a 0. Para encontrarmos o início do frame é preciso um símbolo especial. Para ser despoletada uma transição depois do último bit que funcione como trigger para receber o seu fim usa-se o mesmo quadro que por isso é denominado START/STOP. Na verdade eu usei dois no início e dois no fim. Reparei que funciona melhor. Inspitei-me em código de extensões mas depois percebi porque é que não há nada na net: os timings são tramados de controlar. Por esse motivo há uma função de calibração inicial mas que no meu caso dá maus resultados e por isso usei tempos que medi caso a caso. Podem precisar de ajustes em função de como cresça o peso de processamento do código.
  * 
@@ -213,7 +29,7 @@ function enableIRDetection() {
  * 
  * Um "0" é constituído por 16 períodos ao todo: 6 o marcador e 10 branco.
  * 
- * Conseguimos distinguir os valores binário em transmissão pelo simples facto de termos (bit 0) ou não flutuações nos período que medeiam entre o 16 e o 22 depois de se dar início 
+ * Conseguimos distinguir os valores binário em transmissão pelo simples facto de termos (bit 0) ou não flutuações nos período que medeiam entre o 16 e o 22 depois de se dar início
  * 
  * =========================================================================
  * 
@@ -247,13 +63,13 @@ function enableIRDetection() {
  * 
  * Adicionalmente permite-nos operar o LED com corrente alta sem perigo de aquecimento.
  * 
- * O esquema de redundância passa por enviar enviar três vezes seguidas e repetidas os mesmos 6 bits úteis base. 
+ * O esquema de redundância passa por enviar enviar três vezes seguidas e repetidas os mesmos 6 bits úteis base.
  * 
- * Este terão a seguinte interpretação: (msb) e1 e0 j3 j2 j1 j0 (lsb) 
+ * Este terão a seguinte interpretação: (msb) e1 e0 j3 j2 j1 j0 (lsb)
  * 
- *   - ei são bits que representam uma de quatro equipas
+ * - ei são bits que representam uma de quatro equipas
  * 
- *   - ji são bits que representam um de 16 jogadores da referida equipa
+ * - ji são bits que representam um de 16 jogadores da referida equipa
  * 
  * No total suportamos 64 players simultâneos.
  * 
@@ -267,19 +83,215 @@ function enableIRDetection() {
  * 
  * Posso ainda dar a possibilidade de programar dois modos de disparo: manual e automático: no primeiro envia-se uma bala. No segundo disparam-se 10 balas separadas por 100 ms.
  */
+// // LOW
+pins.onPulsed(DigitalPin.P2, PulseValue.High, function () {
+    space = pins.pulseDuration()
+    control.raiseEvent(
+    EventBusSource.MICROBIT_ID_IO_P19,
+    mark + space
+    )
+})
+function transmitBitHigh () {
+    pins.analogWritePin(AnalogPin.P0, 511)
+    control.waitMicros(IR_MARK)
+    pins.analogWritePin(AnalogPin.P0, 0)
+    control.waitMicros(HIGH_PAUSE)
+}
+function detectBit () {
+    if (pulseToPulse > START_STOP_PAUSE) {
+        IRReceiveState = IRRCV_DETECT_BIT
+    } else if (pulseToPulse > HIGH_PAUSE) {
+        pushBitOne()
+    } else if (pulseToPulse > LOW_PAUSE) {
+        pushBitZero()
+    }
+}
+control.onEvent(EventBusSource.MICROBIT_ID_IO_P19, EventBusValue.MICROBIT_EVT_ANY, function () {
+    pulseToPulse = control.eventValue() - IR_MARK
+    // Estamos a fornecer uma margem de erro para baixo e infinito para cima de 1500 que é o tempo de Low do pino 1.
+    // No arranque o pulseToPulse será obviamente grande pois o led está apagado e P2 da Mircobit estará a High. O evento supostamente apenas é disparado no do período em que P2 esteve a High pois só assim a microbit nos poderia indicar o pulse duration.
+    // Estamos a fornecer uma margem de erro de 10% para baixo e infinito para cima
+    if (pulseToPulse > 1300 && pulseToPulse < 1700) {
+        Reset()
+        IRReceiveState = IRRCV_DETECT_BIT
+    } else {
+        // Estamos a fornecer uma margem de erro para baixo e infinito para cima de 1500 que é o tempo de Low do pino 1.
+        // No arranque o pulseToPulse será obviamente grande pois o led está apagado e P2 da Mircobit estará a High. O evento supostamente apenas é disparado no do período em que P2 esteve a High pois só assim a microbit nos poderia indicar o pulse duration.
+        // Estamos a fornecer uma margem de erro de 10% para baixo e infinito para cima
+        // Estamos a fornecer uma margem de erro para baixo e infinito para cima de 1500 que é o tempo de Low do pino 1.
+        // No arranque o pulseToPulse será obviamente grande pois o led está apagado e P2 da Mircobit estará a High. O evento supostamente apenas é disparado no do período em que P2 esteve a High pois só assim a microbit nos poderia indicar o pulse duration.
+        // Estamos a fornecer uma margem de erro de 10% para baixo e infinito para cima
+        if (pulseToPulse > 800 && pulseToPulse < 1200) {
+            pushBitOne()
+        } else if (pulseToPulse > 50 && pulseToPulse < 400) {
+            pushBitZero()
+        } else {
+            basic.showNumber(pulseToPulse)
+            Reset()
+        }
+    }
+})
+function enableIRDetection () {
+    lasIRShotReceived = 0
+    Reset()
+}
+// USER INTERFACE:
+// 
+// A+B four consecutive times (with 1 second) => Enter into configuration mode
+// 
+// 
+// 
+// Then the display will explain the configuration:
+// 
+// A: Swap between single shot and burst shot
+// 
+// B: Me-> :How many players I shot / ME<- :How many times I was shot / Best Team
+// 
+// A+B: How many shots I already use
+input.onButtonPressed(Button.A, function () {
+    PLAYER_ID += 1
+    // Three consecutive replicas of PLAYER_ID for redundancy.
+    SHOT_MESSAGE = (PLAYER_ID * 2 ** PLAYER_ID_BIT_SIZE + PLAYER_ID) * 2 ** PLAYER_ID_BIT_SIZE + PLAYER_ID
+    basic.showNumber(SHOT_MESSAGE)
+    IRShot()
+    basic.clearScreen()
+})
+// A calibração parece não estar a resultar. Medi e afinei com valores fixos. O bloco ao lado é o código original (deixo para referência).
+function transmitBitStartStop () {
+    pins.analogWritePin(AnalogPin.P0, 511)
+    control.waitMicros(IR_MARK)
+    pins.analogWritePin(AnalogPin.P0, 0)
+    control.waitMicros(START_STOP_PAUSE)
+}
+// Fonte de inspiração:
+// 
+// Recetor IR =============================================================
+// 
+// Extensão: https://github.com/1010Technologies/pxt-makerbit-ir-receiver/blob/master/infrared.ts
+// 
+// Na pasta Projet é o zip pxt-makerbit-ir-receiver-master.zip e o ficheiro infrared.ts
+// 
+// Usei como inspiração para desenhar o meu recetor que case com o de cima.
+// 
+// Como este terá uma thread em background será bom no final eu ter um projeto para o emissor e outro para o recetor.
+// 
+// Pelas minhas contas e assumindo que o pulseToPulse=tempo de mark + tempo de space
+// 
+// Sequência START_STOP demorará 45 períodos de 26 microsegundos ou seja pulseToPulse = 1014 microsegundos (IRMARK + START_STOP_PAUSE)
+// 
+// Sequência LOW demorará 16 períodos de 26 microsegundos ou seja pulseToPulse = 416 microsegundos (IRMARK + LOW_PAUSE)
+// 
+// Sequência HIGH demorará 27 períodso de 26 microsegundos ou seja pulseToPulse = 702 microsegundos  (IRMARK + HIGH_PAUSE)
+// 
+// 
+// 
+// 
+// 
+// Todos os valores foram afinados por mim de forma manual.
+function detectStartStop () {
+    // Estamos a fornecer uma margem de erro de 10% para baixo e infinito para cima
+    if (pulseToPulse > 900) {
+        IRReceiveState = IRRCV_DETECT_BIT
+    }
+}
+function pushBitZero () {
+    // Shift left de 1 bit
+    messageBeingReceived = messageBeingReceived * 2
+    receivedBits += 1
+    if (receivedBits == SHOT_MESSAGE_BIT_SIZE) {
+        lasIRShotReceived = messageBeingReceived
+        control.raiseEvent(
+        EventBusSource.MICROBIT_ID_IO_P20,
+        0
+        )
+        Reset()
+    }
+}
+// // HIGH
+pins.onPulsed(DigitalPin.P2, PulseValue.Low, function () {
+    mark = pins.pulseDuration()
+})
+control.onEvent(EventBusSource.MICROBIT_ID_IO_P20, EventBusValue.MICROBIT_EVT_ANY, function () {
+    basic.showString("R=")
+    basic.showNumber(lasIRShotReceived)
+    basic.pause(1000)
+    basic.clearScreen()
+})
+function pushBitOne () {
+    // Shift left de 1 bit
+    messageBeingReceived = messageBeingReceived * 2
+    messageBeingReceived += 1
+    receivedBits += 1
+    if (receivedBits == SHOT_MESSAGE_BIT_SIZE) {
+        lasIRShotReceived = messageBeingReceived
+        control.raiseEvent(
+        EventBusSource.MICROBIT_ID_IO_P20,
+        1
+        )
+        Reset()
+    }
+}
+// Fazia o trabalho do construtor de class InfraredDevice. Adaptei apenas para inicializar a porta analógica PWM.
+function enableIRTransmission () {
+    // We will use PWM, with a frequency of 38 KHz
+    pins.analogWritePin(AnalogPin.P0, 0)
+    pins.analogSetPeriod(AnalogPin.P0, 26)
+    for (let index = 0; index <= 7; index++) {
+        pins.analogWritePin(AnalogPin.P0, 511)
+        control.waitMicros(1)
+    }
+    // We will use PWM, with a frequency of 38 KHz
+    pins.analogWritePin(AnalogPin.P0, 0)
+}
+function transmitBitLow () {
+    pins.analogWritePin(AnalogPin.P0, 511)
+    control.waitMicros(IR_MARK)
+    pins.analogWritePin(AnalogPin.P0, 0)
+    control.waitMicros(LOW_PAUSE)
+}
+function Reset () {
+    IRRCV_DETECT_START_STOP = 0
+    IRRCV_DETECT_BIT = 1
+    IRReceiveState = IRRCV_DETECT_START_STOP
+    receivedBits = 0
+    messageBeingReceived = 0
+}
+// Bits are sent starting on msb to lsb
+function IRShot () {
+    messageBeingSent = SHOT_MESSAGE
+    // Em binário: 0100 0000 0000 0000
+    // A máscara será usada para transmitir bit a bit
+    mask = 2 ** (SHOT_MESSAGE_BIT_SIZE - 1)
+    for (let index = 0; index < 4; index++) {
+        transmitBitStartStop()
+    }
+    while (mask >= 1) {
+        temp1 = Math.idiv(messageBeingSent, mask)
+        if (temp1 == 1) {
+            transmitBitHigh()
+        } else {
+            transmitBitLow()
+        }
+        messageBeingSent = messageBeingSent - temp1 * mask
+        mask = mask / 2
+    }
+    for (let index = 0; index < 4; index++) {
+        transmitBitStartStop()
+    }
+}
 let temp1 = 0
 let mask = 0
 let messageBeingSent = 0
-let SHOT_MESSAGE = 0
-let lasIRShotReceived = 0
+let IRRCV_DETECT_START_STOP = 0
 let receivedBits = 0
 let messageBeingReceived = 0
-let IRRCV_DETECT_START_STOP = 0
-let mark = 0
-let space = 0
+let SHOT_MESSAGE = 0
+let lasIRShotReceived = 0
 let IRRCV_DETECT_BIT = 0
 let IRReceiveState = 0
 let pulseToPulse = 0
+let mark = 0
+let space = 0
 let HIGH_PAUSE = 0
 let LOW_PAUSE = 0
 let START_STOP_PAUSE = 0
