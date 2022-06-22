@@ -139,7 +139,6 @@ function enableIRDetection () {
 // 
 // A+B: How many shots I already use
 input.onButtonPressed(Button.A, function () {
-    PLAYER_ID += 1
     // Three consecutive replicas of PLAYER_ID for redundancy.
     SHOT_MESSAGE = (PLAYER_ID * 2 ** PLAYER_ID_BIT_SIZE + PLAYER_ID) * 2 ** PLAYER_ID_BIT_SIZE + PLAYER_ID
     basic.showNumber(SHOT_MESSAGE)
